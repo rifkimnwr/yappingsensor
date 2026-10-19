@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sensor Yapping — Multi-Device Monitoring</title>
+    <!-- Firebase SDK (Compat Version) -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
+    <style>
+        :root {
+            --bg-color: #0b132b;
+            --card-bg: #1c2541;
+            --text-color: #ffffff;
+            --text-muted: #8d99ae;
+            --color-green: #2ec4b6;
+            --color-red: #e71d36;
+        }
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .main-container {
+            width: 100%;
+            max-width: 450px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        header {
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        header h1 {
+            font-size: 1.5rem;
+            margin-bottom: 4px;
+        }
+        header p {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+        .device-card {
+            background-color: var(--card-bg);
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+        }
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 14px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding-bottom: 10px;
+        }
+        .device-input {
+            background: rgba(255, 255, 255, 0.07);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: var(--text-color);
+            padding: 6px 10px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.95rem;
+            width: 120px;
+            text-align: center;
+        }
+        .device-input:focus {
+            outline: none;
+            border-color: var(--color-green);
+        }
+        .card-section {
+            margin-bottom: 12px;
+            padding: 10px 14px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+        .value {
+            font-size: 0.95rem;
+            font-weight: 600;
+            text-align: right;
+        }
+        .volume-container {
+            margin-top: 12px;
+            background: rgba(255, 255, 255, 0.03);
+            padding: 12px 14px;
+            border-radius: 8px;
+        }
+        .volume-label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+        .progress-bar-bg {
+            width: 100%;
+            height: 12px;
+            background-color: rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        .progress-bar-fill {
+            height: 100%;
+            width: 0%;
+            background-color: var(--color-green);
+            transition: background-color 0.4s ease;
+        }
+        .status-box {
+            text-align: center;
+            padding: 14px;
+            border-radius: 10px;
+            margin-top: 12px;
+            background: rgba(255, 255, 255, 0.05);
+        }
+        .status-title {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .status-value {
+            font-size: 1.5rem;
+            font-weight: 800;
+            letter-spacing: 1px;
+        }
+        .online { color: var(--color-green); }
+        .offline { color: var(--color-red); }
+        .tenang { color: var(--color-green); }
+        .bising { color: var(--color-red); }
+    </style>
+</head>
+<body>
+
+    <div class="main-container" id="app-container">
+        <header>
+            <h1>SENSOR YAPPING</h1>
+            <p>Multi-Device Real-Time Monitoring</p>
+        </header>
+    </div>
+
+    <script>
+        const firebaseConfig = {
+            databaseURL: "https://sensor-yapping-default-rtdb.asia-southeast1.firebasedatabase.app"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        const initialDevices = ["SY-001", "SY-002", "SY-003", "SY-004", "SY-005"];
+        const maxRawLimit = 400; 
+
+        const container = document.getElementById("app-container");
+        const activeListeners = {};
+        const deviceAnimations = {};
+
+        function createDeviceCard(defaultId, index) {
+            const cardDiv = document.createElement("div");
+            cardDiv.className = "device-card";
+            cardDiv.innerHTML = `
+                <div class="card-header">
+                    <span class="label">Kode Alat:</span>
+                    <input type="text" class="device-input" id="id-input-${index}" value="${defaultId}">
+                </div>
+                <div class="card-section">
+                    <span class="label">Status</span>
+                    <span class="value" id="status-${index}">Menghubungkan...</span>
+                </div>
+                <div class="volume-container">
+                    <div class="volume-label">Level Suara</div>
+                    <div class="progress-bar-bg">
+                        <div class="progress-bar-fill" id="volume-fill-${index}"></div>
+                    </div>
+                </div>
+                <div class="status-box">
+                    <div class="status-title">Kondisi Ruangan</div>
+                    <div class="status-value" id="condition-${index}">-</div>
+                </div>
+            `;
+            container.appendChild(cardDiv);
+
+            deviceAnimations[index] = { currentPct: 0, targetPct: 0 };
+            startSmoothAnimation(index);
+
+            const inputEl = document.getElementById(`id-input-${index}`);
+            setupFirebaseListener(inputEl.value, index);
+
+            inputEl.addEventListener("change", (e) => {
+                const newId = e.target.value.trim();
+                if (newId) {
+                    setupFirebaseListener(newId, index);
+                }
+            });
+        }
+
+        function startSmoothAnimation(index) {
+            const volumeFill = document.getElementById(`volume-fill-${index}`);
+            
+            function animate() {
+                if (deviceAnimations[index]) {
+                    let anim = deviceAnimations[index];
+                    anim.currentPct += (anim.targetPct - anim.currentPct) * 0.15;
+
+                    if (volumeFill) {
+                        volumeFill.style.width = anim.currentPct + "%";
+
+                        if (anim.currentPct > 90) {
+                            volumeFill.style.backgroundColor = "var(--color-red)";
+                        } else {
+                            volumeFill.style.backgroundColor = "var(--color-green)";
+                        }
+                    }
+                }
+                requestAnimationFrame(animate);
+            }
+            requestAnimationFrame(animate);
+        }
+
+        function setupFirebaseListener(devId, index) {
+            if (activeListeners[index]) {
+                db.ref("devices/" + activeListeners[index]).off();
+            }
+            activeListeners[index] = devId;
+
+            const statusEl = document.getElementById(`status-${index}`);
+            const conditionEl = document.getElementById(`condition-${index}`);
+            const volumeFill = document.getElementById(`volume-fill-${index}`);
+
+            db.ref("devices/" + devId).on("value", (snapshot) => {
+                const data = snapshot.val();
+                
+                if (!data) {
+                    statusEl.innerHTML = `<span class="offline">OFFLINE</span><br><span style="font-size:0.75rem; color:var(--text-muted);">Belum ada data</span>`;
+                    conditionEl.innerText = "-";
+                    conditionEl.className = "status-value";
+                    if (deviceAnimations[index]) deviceAnimations[index].targetPct = 0;
+                    return;
+                }
+
+                const currentTime = Math.floor(Date.now() / 1000);
+                const lastSeenTime = data.last_seen || 0;
+                const diffSeconds = currentTime - lastSeenTime;
+
+                let lastSeenStr = "-";
+                if (lastSeenTime > 0) {
+                    const dateObj = new Date(lastSeenTime * 1000);
+                    const options = { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false };
+                    lastSeenStr = dateObj.toLocaleDateString('id-ID', options) + " WIB";
+                }
+
+                // Jika selisih lebih dari 30 detik, anggap OFFLINE dan tampilkan waktu terakhir terlihat
+                if (diffSeconds > 30) {
+                    statusEl.innerHTML = `<span class="offline">OFFLINE</span><br><span style="font-size:0.75rem; color:var(--text-muted);">${lastSeenStr}</span>`;
+                    conditionEl.innerText = "-";
+                    conditionEl.className = "status-value";
+                    if (deviceAnimations[index]) deviceAnimations[index].targetPct = 0;
+                    if (volumeFill) volumeFill.style.backgroundColor = "var(--text-muted)";
+                } else {
+                    // Jika ONLINE, hanya tampilkan teks ONLINE saja (tanpa waktu last seen)
+                    statusEl.innerHTML = `<span class="online">ONLINE</span>`;
+                    
+                    const rawVal = data.raw || 0;
+                    let percentage = (rawVal / maxRawLimit) * 100;
+                    if (percentage > 100) percentage = 100;
+
+                    if (deviceAnimations[index]) {
+                        deviceAnimations[index].targetPct = percentage;
+                    }
+
+                    const condition = percentage > 90 ? "BISING" : "TENANG";
+                    conditionEl.innerText = condition;
+                    conditionEl.className = "status-value " + condition.toLowerCase();
+                }
+            });
+        }
+
+        initialDevices.forEach((id, index) => {
+            createDeviceCard(id, index);
+        });
+    </script>
+</body>
+</html>
